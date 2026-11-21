@@ -1,5 +1,6 @@
 """Construction-stage RCC storm drain scene. Run: blender -b -P blender_drain.py -- out.png"""
-import bpy, sys, math, random
+import bpy, sys, math, random, os
+STAGE = int(os.environ.get('STAGE', '0'))   # 0 = composite view, 1-8 = construction step
 from mathutils import Vector
 
 random.seed(4)
@@ -224,7 +225,7 @@ def mound(x, y, sx, sy, h):
     o.modifiers.move(1, 0)
     o.data.materials.append(MOUND); bpy.ops.object.shade_smooth()
 
-for y in range(0, 11, 2):
+for y in (range(0, 11, 2) if STAGE not in (1, 8) else []):
     mound(-(TW / 2 + 1.1 + random.uniform(-.2, .2)), y + random.uniform(-.4, .4),
           random.uniform(0.9, 1.3), random.uniform(1.2, 1.7), random.uniform(0.35, 0.6))
     mound(TW / 2 + 1.3 + random.uniform(-.2, .2), y + 1 + random.uniform(-.4, .4),
@@ -253,10 +254,21 @@ for a, b in zip(cones, cones[1:]):
 for dx in (2.6, 4.4):
     box("Rut", (0.4, L + 30, 0.04), (dx + 1.5, L / 2, -0.012), WETSOIL)
 
+if STAGE == 1:   # unexcavated ground, pegs + string line
+    box("Fill", (TW, L, TD), (0, L / 2, -TD / 2), SOIL); box("FillTop", (TW + 0.1, L, 0.03), (0, L / 2, 0.0), MUD)
+    PEG = mat_simple("Peg", (0.45, 0.3, 0.15), 0.8); STR = mat_simple("String", (1.0, 0.25, 0.0), 0.5)
+    for x in (-TW / 2, TW / 2):
+        for y in range(0, 11, 2): box("Peg", (0.05, 0.05, 0.5), (x, y, 0.22), PEG)
+        box("String", (0.006, L, 0.006), (x, L / 2, 0.4), STR)
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.02, depth=1.6, location=(1.9, 1.5, 0.8)); bpy.context.object.data.materials.append(STEEL)
+    box("Staff", (0.05, 0.03, 2.0), (-1.6, 7.0, 1.0), mat_simple("Staff", (0.9, 0.85, 0.2), 0.5))
+if STAGE == 8:  # backfill between drain and trench sides
+    for sx in (-1, 1):
+        box("Backfill", ((TW - OUTW) / 2, L, -Z0), (sx * (OUTW / 2 + (TW - OUTW) / 4), L / 2, Z0 / 2), MUD)
 # ---------- 2. gravel sub-base ----------
-box("GravelSubBase", (TW, L, GRAV), (0, L / 2, -TD + GRAV / 2), GRAVEL)
-bpy.ops.mesh.primitive_plane_add(size=1, location=(0.25, 8.4, -TD + GRAV + 0.004))
-p = bpy.context.object; p.scale = (0.9, 1.3, 1); p.data.materials.append(WATER)
+if STAGE == 0 or STAGE >= 3: box("GravelSubBase", (TW, L, GRAV), (0, L / 2, -TD + GRAV / 2), GRAVEL)
+if STAGE in (0, 3): bpy.ops.mesh.primitive_plane_add(size=1, location=(0.25, 8.4, -TD + GRAV + 0.004))
+if STAGE in (0, 3): p = bpy.context.object; p.scale = (0.9, 1.3, 1); p.data.materials.append(WATER)
 
 # ---------- 3. U-channel (cured section + fresh section) ----------
 def channel(y0, y1, mat, tag):
@@ -266,54 +278,67 @@ def channel(y0, y1, mat, tag):
         parts.append(box(f"Wall_{tag}{s}", (WALL, ln, h), (s * (OUTW / 2 - WALL / 2), yc, Z0 + BASE + h / 2), mat, 0.012))
     return parts
 
-channel(0, 4.0, CONC, "cured")
-channel(4.0, CAST_END, WETC, "fresh")
+if STAGE == 0: channel(0, 4.0, CONC, "cured"); channel(4.0, CAST_END, WETC, "fresh")
+if STAGE == 6: channel(0, CAST_END, WETC, "fresh")
+if STAGE == 7:
+    channel(0, L, WETC, "fresh"); HESS = ph_mat("Hessian", "plywood", 2.0, dark=0.45) if PH else WETC
+    for sx in (-1, 1): box("Hessian", (WALL + 0.06, L, 0.015), (sx * (OUTW / 2 - WALL / 2), L / 2, TOP + 0.008), HESS)
+    box("HessianBase", (OUTW - 2 * WALL, L, 0.012), (0, L / 2, Z0 + BASE + 0.006), HESS)
+if STAGE == 8:
+    channel(0, L, CONC, "cured")
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, L / 2, Z0 + BASE + 0.12)); w_ = bpy.context.object
+    w_.scale = (OUTW - 2 * WALL - 0.01, L, 1); w_.data.materials.append(mat_simple("DrainWater", (0.12, 0.11, 0.08), 0.02))
+RB0, LK0 = {0: (CAST_END - 0.3, CAST_END + 0.15), 4: (0, 0.15), 5: (0, 0.15), 6: (CAST_END - 0.3, CAST_END + 0.15)}.get(STAGE, (None, None))
+RB1 = BAR_END if STAGE == 0 else L
+FW0, FW1 = {0: (4.0, CAST_END), 5: (0.0, L), 6: (0.0, CAST_END)}.get(STAGE, (None, None))
 
 # ---------- rebar starters at the unfinished end ----------
-bars = []; R = 0.006; cov = 0.05
-xs_wall = [-(OUTW / 2 - cov - 0.02), -(OUTW / 2 - WALL + cov + 0.02)]
-xs_wall += [-x for x in xs_wall]
-zb = [Z0 + cov, Z0 + BASE - cov]
-for x in xs_wall:                                    # longitudinal wall bars
-    for z in [Z0 + BASE + 0.15 + i * 0.25 for i in range(5)]:
-        bar((x, CAST_END - 0.3, z), (x, BAR_END, z), R, RUST, bars)
-for z in zb:                                          # longitudinal base bars
-    for x in [-0.65 + i * 0.2 for i in range(8)]:
-        bar((x, CAST_END - 0.3, z), (x, BAR_END, z), R, RUST, bars)
-y = CAST_END + 0.15
-while y < BAR_END:                                    # U-shaped links
-    for xo, xi in ((xs_wall[0], xs_wall[1]), (xs_wall[2], xs_wall[3])):
-        for x in (xo, xi):
-            bar((x, y, zb[0] if x in (xs_wall[0], xs_wall[2]) else zb[1]), (x, y, TOP - 0.03), R * 1.3, RUST, bars)
-    for z in zb:
-        bar((xs_wall[0], y, z), (xs_wall[2], y, z), R * 1.3, RUST, bars)
-    y += 0.2
-join(bars, "RebarCage")
+if RB0 is not None:
+ bars = []; R = 0.006; cov = 0.05
+ xs_wall = [-(OUTW / 2 - cov - 0.02), -(OUTW / 2 - WALL + cov + 0.02)]
+ xs_wall += [-x for x in xs_wall]
+ zb = [Z0 + cov, Z0 + BASE - cov]
+ for x in xs_wall:                                    # longitudinal wall bars
+     for z in [Z0 + BASE + 0.15 + i * 0.25 for i in range(5)]:
+         bar((x, RB0, z), (x, RB1, z), R, RUST, bars)
+ for z in zb:                                          # longitudinal base bars
+     for x in [-0.65 + i * 0.2 for i in range(8)]:
+         bar((x, RB0, z), (x, RB1, z), R, RUST, bars)
+ y = LK0
+ while y < RB1:                                    # U-shaped links
+     for xo, xi in ((xs_wall[0], xs_wall[1]), (xs_wall[2], xs_wall[3])):
+         for x in (xo, xi):
+             bar((x, y, zb[0] if x in (xs_wall[0], xs_wall[2]) else zb[1]), (x, y, TOP - 0.03), R * 1.3, RUST, bars)
+     for z in zb:
+         bar((xs_wall[0], y, z), (xs_wall[2], y, z), R * 1.3, RUST, bars)
+     y += 0.2
+ join(bars, "RebarCage")
 
 # ---------- modular formwork with tie-rods over the active pour ----------
-fw = []; PW, PT = 0.6, 0.018
-for s in (-1, 1):
-    for face, off in (("out", OUTW / 2 + PT / 2), ("in", OUTW / 2 - WALL - PT / 2)):
-        y = 4.0
-        while y < CAST_END - 0.01:
-            fw.append(box("Ply", (PT, PW - 0.008, TOP - (Z0 + BASE) + 0.12),
-                          (s * off, y + PW / 2, (TOP + Z0 + BASE) / 2 + 0.06), PLY))
-            y += PW
-    for y in [4.0 + PW * i for i in range(1, 4)]:     # soldiers / walers
-        fw.append(box("Waler", (0.07, 0.07, TOP - (Z0 + BASE)), (s * (OUTW / 2 + 0.055), y, (TOP + Z0 + BASE) / 2), PLY))
-for y in [4.0 + PW * i for i in range(1, 4)]:         # tie-rods through both walls
-    for z in (Z0 + BASE + 0.25, TOP - 0.25):
-        bar((-(OUTW / 2 + 0.12), y, z), (OUTW / 2 + 0.12, y, z), 0.008, STEEL, fw)
-        for s in (-1, 1):
-            bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.03, depth=0.03,
-                                                location=(s * (OUTW / 2 + 0.1), y, z), rotation=(0, math.pi / 2, 0))
-            bpy.context.object.data.materials.append(STEEL); fw.append(bpy.context.object)
-for y in (4.3, 5.5):                                  # spreader struts inside channel
-    fw.append(box("Strut", (OUTW - 2 * WALL - 2 * PT, 0.06, 0.06), (0, y, TOP - 0.1), PLY))
-join(fw, "Formwork")
+if FW0 is not None:
+ fw = []; PW, PT = 0.6, 0.018
+ for s in (-1, 1):
+     for face, off in (("out", OUTW / 2 + PT / 2), ("in", OUTW / 2 - WALL - PT / 2)):
+         y = FW0
+         while y < FW1 - 0.01:
+             fw.append(box("Ply", (PT, PW - 0.008, TOP - (Z0 + BASE) + 0.12),
+                           (s * off, y + PW / 2, (TOP + Z0 + BASE) / 2 + 0.06), PLY))
+             y += PW
+     for y in [FW0 + PW * i for i in range(1, int((FW1 - FW0) / PW))]:     # soldiers / walers
+         fw.append(box("Waler", (0.07, 0.07, TOP - (Z0 + BASE)), (s * (OUTW / 2 + 0.055), y, (TOP + Z0 + BASE) / 2), PLY))
+ for y in [FW0 + PW * i for i in range(1, int((FW1 - FW0) / PW))]:         # tie-rods through both walls
+     for z in (Z0 + BASE + 0.25, TOP - 0.25):
+         bar((-(OUTW / 2 + 0.12), y, z), (OUTW / 2 + 0.12, y, z), 0.008, STEEL, fw)
+         for s in (-1, 1):
+             bpy.ops.mesh.primitive_cylinder_add(vertices=6, radius=0.03, depth=0.03,
+                                                 location=(s * (OUTW / 2 + 0.1), y, z), rotation=(0, math.pi / 2, 0))
+             bpy.context.object.data.materials.append(STEEL); fw.append(bpy.context.object)
+ for y in (FW0 + 0.3, FW1 - 0.5):                                  # spreader struts inside channel
+     fw.append(box("Strut", (OUTW - 2 * WALL - 2 * PT, 0.06, 0.06), (0, y, TOP - 0.1), PLY))
+ join(fw, "Formwork")
 
 # stacked precast cover slabs on right bank
-for i in range(5):
+for i in (range(5) if STAGE not in (1, 2) else []):
     box(f"Cover{i}", (1.8, 0.6, 0.1), (3.4, 0.2 + random.uniform(-.03, .03), 0.05 + i * 0.105), CONC, 0.008).rotation_euler.z = random.uniform(-.03, .03)
 
 # ---------- 5. world: Nishita sky, late afternoon ----------
