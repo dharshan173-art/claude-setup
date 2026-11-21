@@ -159,6 +159,51 @@ WETSOIL = mat_simple("WetRut", (0.03, 0.02, 0.012), 0.8)
 STEEL = mat_simple("TieRodSteel", (0.3, 0.3, 0.32), 0.4, 1.0)
 WATER = mat_simple("Puddle", (0.08, 0.07, 0.05), 0.03); WATER.node_tree.nodes["Principled BSDF"].inputs["Transmission Weight"].default_value = 0.6
 
+# ---------- Poly Haven scanned PBR textures (override procedurals if present) ----------
+import os
+PH = os.environ.get("PH_DIR", "")
+def ph_mat(name, aid, scale, dark=1.0, rough_mul=1.0, bump_s=0.6):
+    m, nt, bsdf = node_mat(name); co = tex_coord(nt)
+    mp = nt.nodes.new("ShaderNodeMapping"); mp.inputs["Scale"].default_value = (scale,) * 3
+    nt.links.new(co, mp.inputs["Vector"])
+    def img(k, color):
+        f = [x for x in os.listdir(PH) if x.startswith(f"{aid}_{k}.")][0]
+        t = nt.nodes.new("ShaderNodeTexImage"); t.image = bpy.data.images.load(os.path.join(PH, f))
+        t.projection = "BOX"; t.projection_blend = 0.25
+        if not color: t.image.colorspace_settings.name = "Non-Color"
+        nt.links.new(mp.outputs[0], t.inputs["Vector"]); return t
+    d = img("diff", True)
+    if dark != 1.0:
+        mu = nt.nodes.new("ShaderNodeMix"); mu.data_type = "RGBA"; mu.blend_type = "MULTIPLY"
+        mu.inputs[0].default_value = 1.0; mu.inputs[7].default_value = (dark, dark, dark * 0.97, 1)
+        nt.links.new(d.outputs["Color"], mu.inputs[6]); nt.links.new(mu.outputs[2], bsdf.inputs["Base Color"])
+    else:
+        nt.links.new(d.outputs["Color"], bsdf.inputs["Base Color"])
+    r = img("rough", False)
+    rm = nt.nodes.new("ShaderNodeMath"); rm.operation = "MULTIPLY"; rm.inputs[1].default_value = rough_mul
+    nt.links.new(r.outputs["Color"], rm.inputs[0]); nt.links.new(rm.outputs[0], bsdf.inputs["Roughness"])
+    n = img("nor", False); nm = nt.nodes.new("ShaderNodeNormalMap")
+    nt.links.new(n.outputs["Color"], nm.inputs["Color"])
+    h = img("disp", False); b = nt.nodes.new("ShaderNodeBump")
+    b.inputs["Strength"].default_value = bump_s; b.inputs["Distance"].default_value = 0.03
+    nt.links.new(h.outputs["Color"], b.inputs["Height"]); nt.links.new(nm.outputs["Normal"], b.inputs["Normal"])
+    nt.links.new(b.outputs["Normal"], bsdf.inputs["Normal"])
+    return m
+
+if PH:
+    SOIL = ph_mat("SoilWall", "excavated_soil_wall", 0.6)
+    MUD = ph_mat("SiteMud", "brown_mud_rocks_01", 0.35)
+    MOUND = ph_mat("SpoilHeap", "rocky_trail", 0.5, bump_s=1.0)
+    GRASS = ph_mat("Grass", "sparse_grass", 1.0)
+    GRAVEL = ph_mat("Gravel", "gravel", 1.2, bump_s=1.0)
+    PLY = ph_mat("Plywood", "plywood", 0.8)
+    RUST = ph_mat("Rebar", "rusty_metal_02", 4.0)
+    CONC = ph_mat("Concrete", "concrete", 0.7)
+    WETC = ph_mat("WetConcrete", "concrete", 0.7, dark=0.55, rough_mul=0.55)
+    WETSOIL = ph_mat("RutMud", "brown_mud_rocks_01", 0.35, dark=0.6, rough_mul=0.5)
+else:
+    MUD = MOUND = GRASS = SOIL
+
 # ---------- 1. ground, trench, spoil mounds ----------
 EXT = 80
 for s in (-1, 1):
@@ -177,7 +222,7 @@ def mound(x, y, sx, sy, h):
     d = o.modifiers.new("disp", "DISPLACE"); d.texture = t; d.strength = 0.25
     sub = o.modifiers.new("sub", "SUBSURF"); sub.levels = 2; sub.render_levels = 2
     o.modifiers.move(1, 0)
-    o.data.materials.append(SOIL); bpy.ops.object.shade_smooth()
+    o.data.materials.append(MOUND); bpy.ops.object.shade_smooth()
 
 for y in range(0, 11, 2):
     mound(-(TW / 2 + 1.1 + random.uniform(-.2, .2)), y + random.uniform(-.4, .4),
@@ -185,6 +230,25 @@ for y in range(0, 11, 2):
     mound(TW / 2 + 1.3 + random.uniform(-.2, .2), y + 1 + random.uniform(-.4, .4),
           random.uniform(0.7, 1.0), random.uniform(1.0, 1.4), random.uniform(0.25, 0.45))
 
+# surface layers: muddy work strip near trench, grass beyond
+for sx in (-1, 1):
+    box("MudStrip", (6.5, L + 80, 0.03), (sx * (TW / 2 + 3.25), L / 2, 0.0), MUD)
+    box("GrassField", (70, L + 80, 0.03), (sx * (TW / 2 + 6.5 + 35), L / 2, -0.005), GRASS)
+box("MudEnd", (TW + 0.1, 80, 0.03), (0, L + 40.05, 0.0), MUD)
+# safety cones + caution tape on left edge
+CONE = mat_simple("ConeOrange", (0.9, 0.18, 0.02), 0.45); WHITE = mat_simple("Reflective", (0.85, 0.85, 0.85), 0.3)
+TAPE = mat_simple("CautionTape", (0.95, 0.75, 0.02), 0.5)
+cones = []
+for y in (-0.6, 2.4, 5.4, 8.4):
+    x = -(TW / 2 + 0.22)
+    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=0.15, radius2=0.025, depth=0.7, location=(x, y, 0.38))
+    bpy.context.object.data.materials.append(CONE); bpy.ops.object.shade_smooth()
+    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.105, depth=0.08, location=(x, y, 0.45))
+    bpy.context.object.data.materials.append(WHITE)
+    box("ConeBase", (0.36, 0.36, 0.03), (x, y, 0.03), CONE)
+    cones.append(y)
+for a, b in zip(cones, cones[1:]):
+    t = box("Tape", (0.005, b - a, 0.07), (-(TW / 2 + 0.22), (a + b) / 2, 0.62), TAPE)
 # tire ruts on right bank
 for dx in (2.6, 4.4):
     box("Rut", (0.4, L + 30, 0.04), (dx + 1.5, L / 2, -0.012), WETSOIL)
