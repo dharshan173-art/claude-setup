@@ -30,5 +30,18 @@
     "ponytail@ponytail": true,
     "agent-skills@addy-agent-skills": true,
     "claude-mem@thedotmack": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pip install -q -r \"$CLAUDE_PROJECT_DIR/requirements.txt\" >/dev/null 2>&1 || true",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
   }
 }
