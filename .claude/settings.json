@@ -23,13 +23,48 @@
         "source": "github",
         "repo": "thedotmack/claude-mem"
       }
+    },
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "marketingskills": {
+      "source": {
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
+      }
+    },
+    "hyperframes": {
+      "source": {
+        "source": "github",
+        "repo": "heygen-com/hyperframes"
+      }
+    },
+    "agent-browser": {
+      "source": {
+        "source": "github",
+        "repo": "vercel-labs/agent-browser"
+      }
     }
   },
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true,
     "ponytail@ponytail": true,
     "agent-skills@addy-agent-skills": true,
-    "claude-mem@thedotmack": true
+    "claude-mem@thedotmack": true,
+    "frontend-design@claude-plugins-official": true,
+    "caveman@caveman": true,
+    "marketing-skills@marketingskills": true,
+    "hyperframes@hyperframes": true,
+    "agent-browser@agent-browser": true
   },
   "hooks": {
     "SessionStart": [
