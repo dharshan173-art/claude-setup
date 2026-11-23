@@ -23,13 +23,20 @@
         "source": "github",
         "repo": "thedotmack/claude-mem"
       }
+    },
+    "petrovici-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "petrovicistefan/claude-code-plugins"
+      }
     }
   },
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true,
     "ponytail@ponytail": true,
     "agent-skills@addy-agent-skills": true,
-    "claude-mem@thedotmack": true
+    "claude-mem@thedotmack": true,
+    "headroom@petrovici-plugins": true
   },
   "hooks": {
     "SessionStart": [
